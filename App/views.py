@@ -1,3 +1,4 @@
+import datetime
 import json
 from django.http import HttpResponse
 from django.shortcuts import render
@@ -8,6 +9,7 @@ import pickle
 import numpy as np
 import pandas as pd
 from sklearn import datasets
+from sklearn.linear_model import LinearRegression
 from django.conf import settings
 from rest_framework import views
 from rest_framework import status
@@ -106,3 +108,42 @@ def display_exchange_rates(request):
 
 def index(request):
     return render(request, 'index.html')
+
+def predict_linear_regression(request):
+    data = ExchangeRate.objects.all()
+
+    # Convert dates to timestamps
+    dates = [(entry.date - datetime.date(1970, 1, 1)).total_seconds() for entry in data]
+    usd_values = [entry.usd for entry in data]
+    aud_values = [entry.aud for entry in data]
+    eur_values = [entry.eur for entry in data]
+
+    X = np.array(dates).reshape(-1, 1)
+
+    model_usd = LinearRegression()
+    model_usd.fit(X, usd_values)
+
+    model_aud = LinearRegression()
+    model_aud.fit(X, aud_values)
+
+    model_eur = LinearRegression()
+    model_eur.fit(X, eur_values)
+
+    # Generating future dates
+    future_dates = np.linspace(np.min(X), np.max(X) + 86400 * 7, 100)
+
+    # Predicting values for each currency
+    predicted_usd = model_usd.predict(future_dates.reshape(-1, 1))
+    predicted_aud = model_aud.predict(future_dates.reshape(-1, 1))
+    predicted_eur = model_eur.predict(future_dates.reshape(-1, 1))
+
+    # Combining predictions for all currencies into a single list
+    predicted_data = [{
+        'date': datetime.datetime.utcfromtimestamp(date).strftime('%Y-%m-%d'),
+        'usd': usd,
+        'aud': aud,
+        'eur': eur
+    } for date, usd, aud, eur in zip(future_dates, predicted_usd, predicted_aud, predicted_eur)]
+
+
+    return render(request, 'predict_data.html', {'predicted_data': json.dumps(predicted_data)})
