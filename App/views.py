@@ -172,7 +172,7 @@ def arima_forecast(request):
         arima_models[currency] = model.fit()
 
     # Forecast future values
-    forecast_period = 30  # Adjust as needed
+    forecast_period = 90 
     forecast_dates = pd.date_range(start=df.index[-1], periods=forecast_period+1, freq='D')
     forecast_dates_str = forecast_dates.strftime('%Y-%m-%d')  # Convert DatetimeIndex to list of strings
     forecast_results = {}
