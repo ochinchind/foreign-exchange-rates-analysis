@@ -19,6 +19,9 @@ import pandas as pd
 from .models import ExchangeRate
 from django.shortcuts import render
 from statsmodels.tsa.arima.model import ARIMA
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
 
 
 class Train(views.APIView):
@@ -168,7 +171,7 @@ def arima_forecast(request):
     # Fit ARIMA model for each currency
     arima_models = {}
     for currency in ['USD', 'AUD', 'EUR']:
-        model = ARIMA(df[currency], order=(5,1,0))
+        model = ARIMA(df[currency], order=(4, 2, 0))
         arima_models[currency] = model.fit()
 
     # Forecast future values
@@ -186,3 +189,79 @@ def arima_forecast(request):
     }
 
     return render(request, 'arima_forecast.html', context)
+
+
+def lstm_forecast(request):
+    # Retrieve data from ExchangeRate model
+    data = ExchangeRate.objects.all()
+
+    # Prepare data for modeling
+    dates = [entry.date for entry in data]
+    usd_values = [entry.usd for entry in data]
+    aud_values = [entry.aud for entry in data]
+    eur_values = [entry.eur for entry in data]
+
+    # Create a DataFrame with date and currency values
+    df = pd.DataFrame({'Date': dates, 'USD': usd_values, 'AUD': aud_values, 'EUR': eur_values})
+
+    # Set 'Date' column as index
+    df.set_index('Date', inplace=True)
+
+    # Normalize data
+    scaler = MinMaxScaler()
+    scaled_data = scaler.fit_transform(df)
+
+    # Create sequences for LSTM training
+    def create_sequences(data, window_size):
+        sequences = []
+        for i in range(len(data) - window_size):
+            sequence = data[i:i+window_size]
+            sequences.append(sequence)
+        return np.array(sequences)
+
+    window_size = 30
+    X = create_sequences(scaled_data, window_size)
+    y = scaled_data[window_size:]
+
+    # Split the data into training and testing sets
+    train_size = int(0.8 * len(X))
+    X_train, X_test = X[:train_size], X[train_size:]
+    y_train, y_test = y[:train_size], y[train_size:]
+
+    # Define the LSTM model
+    model = Sequential([
+        LSTM(64, activation='relu', input_shape=(window_size, 3)),
+        Dense(3)
+    ])
+    model.compile(optimizer='adam', loss='mse')
+
+    # Train the LSTM model
+    model.fit(X_train, y_train, epochs=100, batch_size=32, verbose=1)
+
+    # Make predictions
+    predictions = model.predict(X_test)
+
+    # Inverse transform predictions
+    predictions = scaler.inverse_transform(predictions)
+
+    # Forecast future values
+    future_period = 90
+    future_dates = pd.date_range(start=df.index[-1], periods=future_period+1, freq='D')
+    future_dates_str = future_dates.strftime('%Y-%m-%d')
+    future_sequence = scaled_data[-window_size:].reshape(1, window_size, 3)
+    future_predictions_scaled = []
+    for _ in range(future_period):
+        future_prediction_scaled = model.predict(future_sequence)[0]
+        future_predictions_scaled.append(future_prediction_scaled)
+        future_sequence = np.append(future_sequence[:, 1:, :], [[future_prediction_scaled]], axis=1)
+
+    # Inverse transform future predictions
+    future_predictions = scaler.inverse_transform(np.array(future_predictions_scaled).reshape(-1, 3))
+
+    # Prepare context for rendering
+    context = {
+        'future_dates': json.dumps(list(future_dates_str)[1:]),  
+        'future_predictions': json.dumps(future_predictions.tolist())
+    }
+
+    return render(request, 'lstm_forecast.html', context)
