@@ -21,19 +21,12 @@
 
     <script>
         // Get predicted data from Django context
-        var predictedData = JSON.parse('{{ predicted_data | safe }}');
-        var dates = predictedData.map(function(entry) {
-            return entry.date; 
-        });
-        var usdValues = predictedData.map(function(entry) {
-            return entry.usd;
-        });
-        var audValues = predictedData.map(function(entry) {
-            return entry.aud;
-        });
-        var eurValues = predictedData.map(function(entry) {
-            return entry.eur;
-        });
+        var dates = JSON.parse('{{ forecast_dates | safe }}');
+        var forecastValues = JSON.parse('{{ forecast_results | safe }}');
+        // Extract arrays for each currency
+        var usdValues = forecastValues.USD;
+        var eurValues = forecastValues.EUR;
+        var audValues = forecastValues.AUD;
 
         // Render the chart using Chart.js
         var ctx = document.getElementById('usdChart').getContext('2d');

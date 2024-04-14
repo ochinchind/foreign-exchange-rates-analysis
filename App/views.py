@@ -18,6 +18,7 @@ from sklearn.ensemble import RandomForestClassifier
 import pandas as pd
 from .models import ExchangeRate
 from django.shortcuts import render
+from statsmodels.tsa.arima.model import ARIMA
 
 
 class Train(views.APIView):
@@ -147,3 +148,41 @@ def predict_linear_regression(request):
 
 
     return render(request, 'predict_data.html', {'predicted_data': json.dumps(predicted_data)})
+
+def arima_forecast(request):
+    # Retrieve data from ExchangeRate model
+    data = ExchangeRate.objects.all()
+
+    # Prepare data for modeling
+    dates = [entry.date for entry in data]
+    usd_values = [entry.usd for entry in data]
+    aud_values = [entry.aud for entry in data]
+    eur_values = [entry.eur for entry in data]
+
+    # Create a DataFrame with date and currency values
+    df = pd.DataFrame({'Date': dates, 'USD': usd_values, 'AUD': aud_values, 'EUR': eur_values})
+
+    # Set 'Date' column as index
+    df.set_index('Date', inplace=True)
+
+    # Fit ARIMA model for each currency
+    arima_models = {}
+    for currency in ['USD', 'AUD', 'EUR']:
+        model = ARIMA(df[currency], order=(5,1,0))
+        arima_models[currency] = model.fit()
+
+    # Forecast future values
+    forecast_period = 30  # Adjust as needed
+    forecast_dates = pd.date_range(start=df.index[-1], periods=forecast_period+1, freq='D')
+    forecast_dates_str = forecast_dates.strftime('%Y-%m-%d')  # Convert DatetimeIndex to list of strings
+    forecast_results = {}
+    for currency, model in arima_models.items():
+        forecast = model.forecast(steps=forecast_period)
+        forecast_results[currency] = list(forecast)
+
+    context = {
+        'forecast_dates': json.dumps(list(forecast_dates_str)[1:]),  # Convert to list and exclude first element
+        'forecast_results': json.dumps(forecast_results),
+    }
+
+    return render(request, 'arima_forecast.html', context)
