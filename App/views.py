@@ -1,3 +1,5 @@
+import json
+from django.http import HttpResponse
 from django.shortcuts import render
 
 # Create your views here.
@@ -11,6 +13,9 @@ from rest_framework import views
 from rest_framework import status
 from rest_framework.response import Response
 from sklearn.ensemble import RandomForestClassifier
+import pandas as pd
+from .models import ExchangeRate
+from django.shortcuts import render
 
 
 class Train(views.APIView):
@@ -51,3 +56,53 @@ class Predict(views.APIView):
 
         return Response(predictions, status=status.HTTP_200_OK)
 
+
+def load_data_from_excel(request):
+    data = pd.read_excel('exchange_rates.xlsx', parse_dates=['Date'], date_parser=lambda x: pd.to_datetime(x, format='%d.%m.%Y'))
+    for index, row in data.iterrows():
+        ExchangeRate.objects.create(
+            date=row['Date'],
+            aud=row['AUD'],
+            usd=row['USD'],
+            # Add other fields here
+            eur = row['EUR'],
+            cny = row['CNY'],
+            kgs = row['KGS'],
+            nok = row['NOK'],
+            uah = row['UAH'],
+            krw = row['KRW'],
+            jpy = row['JPY'],
+            mxn = row['MXN']
+        )
+    return HttpResponse("Data loaded successfully")
+
+def display_exchange_rates(request):
+    exchange_rates = ExchangeRate.objects.all()
+    dates = [exchange.date.strftime('%Y-%m-%d') for exchange in exchange_rates]
+    aud = [exchange.aud for exchange in exchange_rates]
+    usd = [exchange.usd for exchange in exchange_rates]
+    eur = [exchange.eur for exchange in exchange_rates]
+    cny = [exchange.cny for exchange in exchange_rates]
+    kgs = [exchange.kgs for exchange in exchange_rates]
+    nok = [exchange.nok for exchange in exchange_rates]
+    uah = [exchange.uah for exchange in exchange_rates]
+    krw = [exchange.krw for exchange in exchange_rates]
+    jpy = [exchange.jpy for exchange in exchange_rates]
+    mxn = [exchange.mxn for exchange in exchange_rates]
+    return render(request, 'template.html', {
+        'exchange_rates': exchange_rates, 
+        'dates': json.dumps(dates),
+        'aud': json.dumps(aud),
+        'usd': json.dumps(usd),
+        'eur': json.dumps(eur),
+        'cny': json.dumps(cny),
+        'kgs': json.dumps(kgs),
+        'nok': json.dumps(nok),
+        'uah': json.dumps(uah),
+        'krw': json.dumps(krw),
+        'jpy': json.dumps(jpy),
+        'mxn': json.dumps(mxn),
+    })
+
+def index(request):
+    return render(request, 'index.html')
