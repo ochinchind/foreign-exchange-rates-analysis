@@ -22,6 +22,7 @@ from statsmodels.tsa.arima.model import ARIMA
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
+from prophet import Prophet
 
 
 class Train(views.APIView):
@@ -265,3 +266,45 @@ def lstm_forecast(request):
     }
 
     return render(request, 'lstm_forecast.html', context)
+
+
+def prophet_forecast(request):
+    # Retrieve data from ExchangeRate model
+    data = ExchangeRate.objects.all()
+
+    # Prepare data for modeling
+    dates = [entry.date for entry in data]
+    usd_values = [entry.usd for entry in data]
+    aud_values = [entry.aud for entry in data]
+    eur_values = [entry.eur for entry in data]
+
+    # Create a DataFrame with date and currency values
+    df = pd.DataFrame({'ds': dates, 'USD': usd_values, 'AUD': aud_values, 'EUR': eur_values})
+
+    # Initialize Prophet model for each currency
+    prophet_models = {}
+    for currency in ['USD', 'AUD', 'EUR']:
+        model = Prophet()
+        df_currency = df[['ds', currency]].rename(columns={'ds': 'ds', currency: 'y'})
+        model.fit(df_currency)
+        prophet_models[currency] = model
+
+    # Make future predictions
+    forecast_period = 90
+    future_dates = pd.date_range(start=df['ds'].iloc[-1], periods=forecast_period+1, freq='D')[1:]
+    forecast_results = {}
+    for currency, model in prophet_models.items():
+        future = model.make_future_dataframe(periods=forecast_period)
+        forecast = model.predict(future)
+        forecast_results[currency] = forecast[['ds', 'yhat']].tail(forecast_period)
+
+    context = {
+        'forecast_dates': json.dumps(forecast_results['USD']['ds'].dt.strftime('%Y-%m-%d').tolist()),
+        'forecast_results': json.dumps({
+            'USD': forecast_results['USD']['yhat'].tolist(),
+            'AUD': forecast_results['AUD']['yhat'].tolist(),
+            'EUR': forecast_results['EUR']['yhat'].tolist()
+        }),
+    }
+
+    return render(request, 'prophet_forecast.html', context)
